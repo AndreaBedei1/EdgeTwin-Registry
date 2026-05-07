@@ -16,17 +16,7 @@ This project implements:
 - Shared Zod schemas for frontend and backend validation.
 - A mock HDT deployment adapter that returns fake deployment metadata after a profile is saved.
 
-Out of scope:
-
-- Kubernetes orchestrator implementation.
-- Real Kubernetes namespaces, Pods, Deployments, clusters, or node registration.
-- `kubectl` usage.
-- DockerHub integration.
-- Adding `@kubernetes/client-node`.
-- Letting user input or QR data control Docker images, namespaces, pod names, privileged settings, or cluster configuration.
-
 ## Architecture
-
 - `apps/web`: React, TypeScript, Vite frontend.
 - `apps/api`: Express, TypeScript, MongoDB API.
 - `packages/shared`: shared Zod schemas and TypeScript types.
