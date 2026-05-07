@@ -137,6 +137,8 @@ Profile creation is the only flow that triggers HDT deployment:
 
 QR scanning and manual edge entry only populate edge metadata in the form. They do not directly trigger deployment, and the backend does not call `edgeApiBaseUrl` yet.
 
+After the first profile is saved, the dashboard shows existing profiles before the registration form. Use the `Add another profile` control to reopen the collapsed registration form.
+
 ## Profile Fields
 
 The profile flow is intentionally narrow for the MVP.

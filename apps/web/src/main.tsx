@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Scanner, type IDetectedBarcode } from "@yudiel/react-qr-scanner";
 import { QRCodeSVG } from "qrcode.react";
@@ -17,6 +17,10 @@ import "./styles.css";
 type View = "login" | "register" | "dashboard";
 type FieldErrors = Record<string, string>;
 type EdgeMode = "qr" | "manual";
+type DashboardMessage = { tone: "success" | "error"; text: string };
+
+const PROFILE_FORM_PANEL_ID = "profile-form-panel";
+const PROFILE_FORM_HEADING_ID = "profile-form-heading";
 
 const emptyProfile: ProfileCreateInput = {
   personalData: { firstName: "", lastName: "", phone: "", dateOfBirth: "" },
@@ -414,11 +418,13 @@ function EdgeModeToggle({ value, onChange }: { value: EdgeMode; onChange: (value
 function ProfileForm({
   editingProfile,
   onSaved,
-  onCancelEdit
+  onCancelEdit,
+  headingId
 }: {
   editingProfile: Profile | null;
   onSaved: (profile: Profile) => void;
   onCancelEdit: () => void;
+  headingId: string;
 }) {
   const [form, setForm] = useState<ProfileCreateInput>(emptyProfile);
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -428,6 +434,10 @@ function ProfileForm({
 
   useEffect(() => {
     if (!editingProfile) {
+      setForm(emptyProfile);
+      setEdgeMode("qr");
+      setMessage("");
+      setErrors({});
       return;
     }
     const edgeSource = editingProfile.edgeData.source === "qr" ? "qr" : "manual";
@@ -484,7 +494,6 @@ function ProfileForm({
         setForm(emptyProfile);
         setEdgeMode("qr");
       }
-      setMessage(editingProfile ? "Profile updated." : "Profile saved and mock HDT deployment started.");
     } catch (err) {
       const apiError = err as ApiError;
       setMessage(apiError.message);
@@ -500,7 +509,7 @@ function ProfileForm({
     <form className="panel profile-form" onSubmit={onSubmit} noValidate aria-busy={isLoading}>
       <div className="card-heading">
         <p className="eyebrow">Profile setup</p>
-        <h2>{editingProfile ? "Edit profile" : "Register profile"}</h2>
+        <h2 id={headingId}>{editingProfile ? "Edit profile" : "Register profile"}</h2>
       </div>
 
       <section aria-labelledby="personal-heading">
@@ -572,7 +581,7 @@ function ProfileForm({
       </section>
 
       {message ? (
-        <p className={message.includes("saved") || message.includes("updated") ? "form-message success" : "form-message error"} role="status" aria-live="polite">
+        <p className="form-message error" role="alert" aria-live="assertive">
           {message}
         </p>
       ) : null}
@@ -588,17 +597,156 @@ function ProfileForm({
   );
 }
 
+function EmptyProfilesState() {
+  return (
+    <section className="panel empty-profiles-state" aria-label="No saved profiles">
+      <p>No profiles registered yet. Create the first HDT profile for this edge node.</p>
+    </section>
+  );
+}
+
+function ProfileFormDisclosure({
+  isOpen,
+  onClick
+}: {
+  isOpen: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className="profile-form-disclosure"
+      type="button"
+      aria-expanded={isOpen}
+      aria-controls={PROFILE_FORM_PANEL_ID}
+      onClick={onClick}
+    >
+      <span className="disclosure-label">
+        <span className="disclosure-icon" aria-hidden="true">{isOpen ? "-" : "+"}</span>
+        <span>{isOpen ? "Close profile form" : "Add another profile"}</span>
+      </span>
+    </button>
+  );
+}
+
+function ProfilesList({
+  profiles,
+  onEditProfile
+}: {
+  profiles: Profile[];
+  onEditProfile: (profile: Profile) => void;
+}) {
+  return (
+    <section className="panel profiles-panel" aria-labelledby="profiles-heading">
+      <div className="card-heading">
+        <p className="eyebrow">Saved profiles</p>
+        <h2 id="profiles-heading">Your profiles</h2>
+      </div>
+      <div className="profile-list">
+        {profiles.map((profile) => (
+          <article className="profile-card" key={profile._id}>
+            <h3>{profile.hdtData.name}</h3>
+            <p>{profile.personalData.firstName} {profile.personalData.lastName}</p>
+            <dl>
+              <div><dt>Vehicle</dt><dd>{profile.vdtData.brand} {profile.vdtData.model}</dd></div>
+              <div><dt>Type</dt><dd>{profile.vdtData.vehicleType}</dd></div>
+              <div><dt>Edge</dt><dd>{profile.edgeData.edgeName || profile.edgeData.edgeId}</dd></div>
+              <div><dt>Deployment</dt><dd>{profile.deployment.status}</dd></div>
+              <div><dt>Pod</dt><dd>{profile.deployment.podName ?? "Pending"}</dd></div>
+            </dl>
+            <button className="secondary-button full-width" type="button" onClick={() => onEditProfile(profile)}>
+              Edit profile
+            </button>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
-  const [message, setMessage] = useState("");
+  const [dashboardMessage, setDashboardMessage] = useState<DashboardMessage | null>(null);
+  const [hasLoadedProfiles, setHasLoadedProfiles] = useState(false);
+  const [isProfileFormOpen, setIsProfileFormOpen] = useState(false);
+  const messageRef = useRef<HTMLParagraphElement | null>(null);
 
   useEffect(() => {
-    api
-      .profiles()
-      .then((result) => setProfiles(result.profiles))
-      .catch((err: ApiError) => setMessage(err.message));
+    let isActive = true;
+
+    async function loadProfiles() {
+      try {
+        const result = await api.profiles();
+        if (!isActive) {
+          return;
+        }
+        setProfiles(result.profiles);
+        setIsProfileFormOpen(result.profiles.length === 0);
+      } catch (err) {
+        if (!isActive) {
+          return;
+        }
+        const apiError = err as ApiError;
+        setDashboardMessage({ tone: "error", text: apiError.message });
+        setIsProfileFormOpen(true);
+      } finally {
+        if (isActive) {
+          setHasLoadedProfiles(true);
+        }
+      }
+    }
+
+    loadProfiles();
+
+    return () => {
+      isActive = false;
+    };
   }, []);
+
+  useEffect(() => {
+    if (dashboardMessage) {
+      messageRef.current?.focus();
+    }
+  }, [dashboardMessage]);
+
+  function openCreateForm() {
+    setEditingProfile(null);
+    setIsProfileFormOpen(true);
+  }
+
+  function toggleProfileForm() {
+    if (isProfileFormOpen) {
+      setEditingProfile(null);
+      setIsProfileFormOpen(false);
+      return;
+    }
+    openCreateForm();
+  }
+
+  function editProfile(profile: Profile) {
+    setEditingProfile(profile);
+    setIsProfileFormOpen(true);
+  }
+
+  function cancelEdit() {
+    setEditingProfile(null);
+    setIsProfileFormOpen(profiles.length === 0);
+  }
+
+  function saveProfile(profile: Profile) {
+    const wasEditing = Boolean(editingProfile);
+
+    setProfiles((current) => {
+      const exists = current.some((item) => item._id === profile._id);
+      return exists ? current.map((item) => (item._id === profile._id ? profile : item)) : [profile, ...current];
+    });
+    setEditingProfile(null);
+    setIsProfileFormOpen(false);
+    setDashboardMessage({
+      tone: "success",
+      text: wasEditing ? "Profile updated." : "Profile saved and mock HDT deployment started."
+    });
+  }
 
   return (
     <main className="layout">
@@ -611,47 +759,41 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
           Log out
         </button>
       </header>
-      {message ? (
-        <p className="form-message error" role="alert" aria-live="assertive">
-          {message}
+      {dashboardMessage ? (
+        <p
+          className={`form-message ${dashboardMessage.tone}`}
+          role={dashboardMessage.tone === "error" ? "alert" : "status"}
+          aria-live={dashboardMessage.tone === "error" ? "assertive" : "polite"}
+          tabIndex={-1}
+          ref={messageRef}
+        >
+          {dashboardMessage.text}
         </p>
       ) : null}
-      <ProfileForm
-        editingProfile={editingProfile}
-        onCancelEdit={() => setEditingProfile(null)}
-        onSaved={(profile) => {
-          setProfiles((current) => {
-            const exists = current.some((item) => item._id === profile._id);
-            return exists ? current.map((item) => (item._id === profile._id ? profile : item)) : [profile, ...current];
-          });
-          setEditingProfile(null);
-        }}
-      />
-      <section className="panel" aria-labelledby="profiles-heading">
-        <div className="card-heading">
-          <p className="eyebrow">Saved profiles</p>
-          <h2 id="profiles-heading">Your profiles</h2>
-        </div>
-        {profiles.length === 0 ? <p>No profiles registered yet.</p> : null}
-        <div className="profile-list">
-          {profiles.map((profile) => (
-            <article className="profile-card" key={profile._id}>
-              <h3>{profile.hdtData.name}</h3>
-              <p>{profile.personalData.firstName} {profile.personalData.lastName}</p>
-              <dl>
-                <div><dt>Vehicle</dt><dd>{profile.vdtData.brand} {profile.vdtData.model}</dd></div>
-                <div><dt>Type</dt><dd>{profile.vdtData.vehicleType}</dd></div>
-                <div><dt>Edge</dt><dd>{profile.edgeData.edgeName || profile.edgeData.edgeId}</dd></div>
-                <div><dt>Deployment</dt><dd>{profile.deployment.status}</dd></div>
-                <div><dt>Pod</dt><dd>{profile.deployment.podName ?? "Pending"}</dd></div>
-              </dl>
-              <button className="secondary-button full-width" type="button" onClick={() => setEditingProfile(profile)}>
-                Edit profile
-              </button>
-            </article>
-          ))}
-        </div>
-      </section>
+      {!hasLoadedProfiles ? (
+        <p className="panel" role="status" aria-live="polite">Loading profiles...</p>
+      ) : (
+        <>
+          {profiles.length > 0 ? (
+            <>
+              <ProfilesList profiles={profiles} onEditProfile={editProfile} />
+              <ProfileFormDisclosure isOpen={isProfileFormOpen} onClick={toggleProfileForm} />
+            </>
+          ) : (
+            <EmptyProfilesState />
+          )}
+          {isProfileFormOpen ? (
+            <section id={PROFILE_FORM_PANEL_ID} className="profile-form-panel" aria-labelledby={PROFILE_FORM_HEADING_ID}>
+              <ProfileForm
+                editingProfile={editingProfile}
+                headingId={PROFILE_FORM_HEADING_ID}
+                onCancelEdit={cancelEdit}
+                onSaved={saveProfile}
+              />
+            </section>
+          ) : null}
+        </>
+      )}
     </main>
   );
 }
