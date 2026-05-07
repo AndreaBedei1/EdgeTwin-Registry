@@ -1,0 +1,22 @@
+{
+  "name": "hdt-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Mobile-first web application for registering users, Human Digital Twins, Vehicle Digital Twins, and HDT deployments.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run build -w @hdt/shared && concurrently \"npm run dev -w @hdt/api\" \"npm run dev -w @hdt/web\"",
+    "build": "npm run build -w @hdt/shared && npm run build -w @hdt/api && npm run build -w @hdt/web",
+    "test": "npm run test -w @hdt/shared && npm run test -w @hdt/api",
+    "typecheck": "npm run build -w @hdt/shared && npm run typecheck -w @hdt/shared && npm run typecheck -w @hdt/api && npm run typecheck -w @hdt/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

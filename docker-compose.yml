@@ -1,0 +1,18 @@
+# Local development only. These MongoDB credentials are intentionally weak
+# placeholders and must never be reused for production or shared environments.
+services:
+  mongodb:
+    image: mongo:7
+    container_name: hdt-platform-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: hdt_platform_dev
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: root_password_change_me
+    volumes:
+      - mongodb_data:/data/db
+
+volumes:
+  mongodb_data:
